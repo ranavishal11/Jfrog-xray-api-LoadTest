@@ -139,7 +139,7 @@ class JFrogXrayUser(HttpUser):
         "path": f"{IMAGE_NAME}/{TAG}/manifest.json"
     }
         for _ in range(10):  # Retry up to 10 times
-        with self.client.post(url, headers=self.headers, json=payload, name="Check Scan Status", catch_response=True) as response:
+            with self.client.post(url, headers=self.headers, json=payload, name="Check Scan Status", catch_response=True) as response:
             try:
                 response_data = response.json()  # Parse the JSON response
                 if response_data.get("overall", {}).get("status") == "DONE":
@@ -153,7 +153,7 @@ class JFrogXrayUser(HttpUser):
                 response.failure("Invalid JSON response")
                 logger.error("Failed to parse JSON response.")
                 time.sleep(3)  # Wait for 3 seconds before retrying
-            logger.error("Scan status did not reach DONE after 10 attempts.")
+        logger.error("Scan status did not reach DONE after 10 attempts.")
 
     def get_violations(self):
         url = f"{self.host}/xray/api/v1/violations"
