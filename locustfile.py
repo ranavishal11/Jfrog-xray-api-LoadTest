@@ -117,6 +117,29 @@ class JFrogXrayUser(HttpUser):
         }
         self.client.post(url, headers=self.headers, json=payload, name="Apply Watch")
 
+    def check_scan_status(self):
+        url = f"{self.host}/xray/api/v1/artifact/status"
+        payload = {
+          "repo": REPO_NAME,
+          "path": f"{IMAGE_NAME}/{TAG}/manifest.json" 
+          } 
+        for _ in range(10):  # Retry up to 10 times
+            with self.client.post(url, headers=self.headers, json=payload, name="Check Scan Status", catch_response=True) as response:
+                try:
+                    response_data = response.json()  # Parse the JSON response
+                    if response_data.get("overall", {}).get("status") == "DONE":
+                        response.success()
+                        logger.info("Scan status is DONE.")
+                        return  # Exit the loop if the status is DONE
+                    else:
+                        response.failure("Scan not done yet")
+                        logger.info("Scan status is not DONE. Retrying...")
+                except json.JSONDecodeError:
+                    response.failure("Invalid JSON response")
+                    logger.error("Failed to parse JSON response.")
+            time.sleep(5)  # Wait before retrying
+        logger.error("Scan status check failed after 10 attempts.")  
+
     # def check_scan_status(self):
     #     url = f"{self.host}/xray/api/v1/artifact/status"
     #     payload = {
@@ -131,29 +154,7 @@ class JFrogXrayUser(HttpUser):
     #             else:
     #                 response.failure("Scan not done yet")
     #         time.sleep(3)
-    def check_scan_status(self):
-        url = f"{self.host}/xray/api/v1/artifact/status"
-        
-        payload = {
-        "repo": REPO_NAME,
-        "path": f"{IMAGE_NAME}/{TAG}/manifest.json"
-    }
-        for _ in range(10):  # Retry up to 10 times
-            with self.client.post(url, headers=self.headers, json=payload, name="Check Scan Status", catch_response=True) as response:
-            try:
-                response_data = response.json()  # Parse the JSON response
-                if response_data.get("overall", {}).get("status") == "DONE":
-                    response.success()
-                    logger.info("Scan status is DONE.")
-                    return  # Exit the loop if the status is DONE
-                else:
-                    response.failure("Scan not done yet")
-                    logger.info("Scan status is not DONE. Retrying...")
-            except json.JSONDecodeError:
-                response.failure("Invalid JSON response")
-                logger.error("Failed to parse JSON response.")
-                time.sleep(3)  # Wait for 3 seconds before retrying
-        logger.error("Scan status did not reach DONE after 10 attempts.")
+    
 
     def get_violations(self):
         url = f"{self.host}/xray/api/v1/violations"
