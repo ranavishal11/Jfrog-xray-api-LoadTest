@@ -12,8 +12,8 @@ pip install -r requirements.txt
 python -m locust \
   -f locustfile.py \
   --headless \
-  -u 10 \
-  -r 2 \
+  -u 2 \
+  -r 1 \
   -t 1m \
   --csv=reports/report \
   --host=https://$JFROG_PLATFORM_ID.jfrog.io
