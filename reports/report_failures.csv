@@ -1,4 +1,3 @@
 Method,Name,Error,Occurrences
-POST,Apply Watch,HTTPError('409 Client Error: Conflict for url: Apply Watch'),2
-POST,Check Scan Status,CatchResponseError('Scan not done yet'),2
-POST,Get Violations,HTTPError('409 Client Error: Conflict for url: Get Violations'),2
+POST,Check Scan Status,CatchResponseError('Scan not done yet'),110
+PUT,Create Repository,"CatchResponseError('{\n  ""errors"" : [ {\n    ""status"" : 400,\n    ""message"" : ""error when validating repository name: docker-local : Case insensitive repository key already exists""\n  } ]\n}')",20
