@@ -5,7 +5,7 @@ import json
 import subprocess
 import logging
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 
 USERNAME = os.getenv("JFROG_USERNAME")
 PASSWORD = os.getenv("JFROG_PASSWORD")
@@ -15,10 +15,13 @@ IMAGE_NAME = os.getenv("DOCKER_IMAGE_NAME", "alpine")
 TAG = os.getenv("DOCKER_IMAGE_TAG", "3.9")
 
 class JFrogXrayUser(HttpUser):
-    wait_time = between(1, 60)
+    wait_time = between(1, 3)
     host = f"https://{PLATFORM_ID}.jfrog.io"
 
+    # moved inside on_start
+
     def on_start(self):
+        self.WATCH_NAME = f"watch_{int(time.time())}"
         self.auth_header = self._generate_auth_header()
         self.headers = {
             "Content-Type": "application/json",
@@ -85,7 +88,7 @@ class JFrogXrayUser(HttpUser):
         url = f"{self.host}/xray/api/v2/watches"
         payload = {
             "general_data": {
-                "name": "watch_1",
+                "name": self.WATCH_NAME,
                 "description": "Watch for docker repo",
                 "active": True
             },
@@ -107,61 +110,47 @@ class JFrogXrayUser(HttpUser):
 
     def apply_watch(self):
         url = f"{self.host}/xray/api/v1/applyWatch"
-        now = datetime.now(timezone.utc).isoformat()
+        now = datetime.now(timezone.utc)
         payload = {
-            "watch_names": ["watch_1"],
+            "watch_names": [self.WATCH_NAME],
             "date_range": {
-                "start_date": now,
-                "end_date": now
+                "start_date": (now - timedelta(minutes=5)).isoformat(),
+                "end_date": now.isoformat()
             }
         }
-        self.client.post(url, headers=self.headers, json=payload, name="Apply Watch")
-
-    # def check_scan_status(self):
-    #     url = f"{self.host}/xray/api/v1/artifact/status"
-    #     payload = {
-    #       "repo": REPO_NAME,
-    #       "path": f"{IMAGE_NAME}/{TAG}/manifest.json" 
-    #       } 
-    #     for _ in range(10):  # Retry up to 10 times
-    #         with self.client.post(url, headers=self.headers, json=payload, name="Check Scan Status", catch_response=True) as response:
-    #             try:
-    #                 response_data = response.json()  # Parse the JSON response
-    #                 if response_data.get("overall", {}).get("status") == "DONE":
-    #                     response.success()
-    #                     logger.info("Scan status is DONE.")
-    #                     return  # Exit the loop if the status is DONE
-    #                 else:
-    #                     response.failure("Scan not done yet")
-    #                     logger.info("Scan status is not DONE. Retrying...")
-    #             except json.JSONDecodeError:
-    #                 response.failure("Invalid JSON response")
-    #                 logger.error("Failed to parse JSON response.")
-    #         time.sleep(5)  # Wait before retrying
-    #     logger.error("Scan status check failed after 10 attempts.")  
+        with self.client.post(url, headers=self.headers, json=payload, name="Apply Watch", catch_response=True) as response:
+            if response.status_code != 200:
+                response.failure(response.text)
 
     def check_scan_status(self):
-        url = f"{self.host}/xray/api/v1/artifact/status"
+        url = f"{self.host}/xray/api/v1/scanArtifact"
         payload = {
-            "repo": REPO_NAME,
-            "path": f"{IMAGE_NAME}/{TAG}/manifest.json"
+            "component_id": f"docker://{REPO_NAME}/{IMAGE_NAME}:{TAG}"
         }
-        # for _ in range(10):
-        with self.client.post(url, headers=self.headers, json=payload, name="Check Scan Status", catch_response=True) as response:
-            # response_data = response.json()
-            if '"status": "DONE"' in response.text:
-                response.success()
-                return
-            else:
-                response.failure("Scan not done yet")
-        time.sleep(3)
-    
+        with self.client.post(url, headers=self.headers, json=payload, name="Trigger Scan", catch_response=True) as response:
+            if response.status_code != 200:
+                response.failure(response.text)
+                return False
+
+        status_url = f"{self.host}/xray/api/v1/scan/status"
+        for _ in range(10):
+            with self.client.post(status_url, headers=self.headers, json=payload, name="Check Scan Status", catch_response=True) as response:
+                if '"status":"DONE"' in response.text:
+                    response.success()
+                    return True
+                else:
+                    response.failure("Scan not done yet")
+            time.sleep(6)
+        return False
 
     def get_violations(self):
+        time.sleep(10)  # Give Xray time to index violations
+        if not self.check_scan_status():
+            return
         url = f"{self.host}/xray/api/v1/violations"
         payload = {
             "filters": {
-                "watch_name": "watch_1",
+                "watch_name": self.WATCH_NAME,
                 "violation_type": "Security",
                 "min_severity": "High",
                 "resources": {
